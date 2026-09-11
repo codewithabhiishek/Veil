@@ -1,0 +1,20 @@
+{
+  "name": "Vault — Password Manager",
+  "short_name": "Vault",
+  "description": "Secure local password manager with biometric unlock",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111110",
+  "theme_color": "#1a1918",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["productivity", "security"],
+  "lang": "en"
+}
