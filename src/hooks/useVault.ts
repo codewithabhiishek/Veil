@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useVaultStore } from '../store/vaultStore';
+import { haptics } from '../lib/haptics';
 
 export { useToast } from '../components/Toast';
 
@@ -56,6 +57,7 @@ export function useClipboard() {
   const copyToClipboard = useCallback(async (text: string): Promise<boolean> => {
     try {
       await navigator.clipboard.writeText(text);
+      haptics.copy();
       
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       

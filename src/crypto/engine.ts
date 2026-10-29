@@ -490,13 +490,75 @@ export function generateRecoveryCodes(count: number): string[] {
   return codes;
 }
 
-export function getVaultStorageKey(): string {
-  return 'vault_encrypted_data';
+export const BASE_VAULT_KEY = 'veil_vault_encrypted_data';
+export const BASE_SETTINGS_KEY = 'veil_vault_settings';
+export const ACTIVE_VAULT_ID_KEY = 'veil_active_vault_id';
+export const DEFAULT_VAULT_ID = 'default';
+
+export function sanitizeVaultId(id?: string | null): string {
+  if (!id) return DEFAULT_VAULT_ID;
+  const cleaned = id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  return cleaned || DEFAULT_VAULT_ID;
 }
 
-export function loadEncryptedVault(): EncryptedVault | null {
+export function getActiveVaultId(): string {
   try {
-    const raw = localStorage.getItem(getVaultStorageKey());
+    if (typeof localStorage === 'undefined') return DEFAULT_VAULT_ID;
+    return sanitizeVaultId(localStorage.getItem(ACTIVE_VAULT_ID_KEY) || DEFAULT_VAULT_ID);
+  } catch {
+    return DEFAULT_VAULT_ID;
+  }
+}
+
+export function setActiveVaultId(vaultId: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(ACTIVE_VAULT_ID_KEY, sanitizeVaultId(vaultId));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getScopedVaultStorageKey(vaultId?: string): string {
+  const safeId = sanitizeVaultId(vaultId || getActiveVaultId());
+  return `${BASE_VAULT_KEY}:${safeId}`;
+}
+
+export function getScopedSettingsKey(vaultId?: string): string {
+  const safeId = sanitizeVaultId(vaultId || getActiveVaultId());
+  return `${BASE_SETTINGS_KEY}:${safeId}`;
+}
+
+export function migrateLegacyVaultIfNeeded(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const legacyVault = localStorage.getItem('vault_encrypted_data');
+    const defaultScopedKey = `${BASE_VAULT_KEY}:${DEFAULT_VAULT_ID}`;
+    if (legacyVault && !localStorage.getItem(defaultScopedKey)) {
+      localStorage.setItem(defaultScopedKey, legacyVault);
+    }
+
+    const legacySettings = localStorage.getItem('vault_settings');
+    const defaultSettingsKey = `${BASE_SETTINGS_KEY}:${DEFAULT_VAULT_ID}`;
+    if (legacySettings && !localStorage.getItem(defaultSettingsKey)) {
+      localStorage.setItem(defaultSettingsKey, legacySettings);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getVaultStorageKey(vaultId?: string): string {
+  return getScopedVaultStorageKey(vaultId);
+}
+
+export function loadEncryptedVault(vaultId?: string): EncryptedVault | null {
+  migrateLegacyVaultIfNeeded();
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const key = getScopedVaultStorageKey(vaultId);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     return JSON.parse(raw) as EncryptedVault;
   } catch {
@@ -504,12 +566,31 @@ export function loadEncryptedVault(): EncryptedVault | null {
   }
 }
 
-export function saveEncryptedVault(vault: EncryptedVault): void {
-  localStorage.setItem(getVaultStorageKey(), JSON.stringify(vault));
+export function saveEncryptedVault(vault: EncryptedVault, vaultId?: string): void {
+  migrateLegacyVaultIfNeeded();
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const key = getScopedVaultStorageKey(vaultId);
+    localStorage.setItem(key, JSON.stringify(vault));
+  } catch {
+    /* ignore */
+  }
 }
 
-export function deleteEncryptedVault(): void {
-  localStorage.removeItem(getVaultStorageKey());
-  localStorage.removeItem('vault_bio_unlock_key');
-  localStorage.removeItem('vault_bio_credential_id');
+export function deleteEncryptedVault(vaultId?: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const key = getScopedVaultStorageKey(vaultId);
+    localStorage.removeItem(key);
+    const safeId = sanitizeVaultId(vaultId || getActiveVaultId());
+    localStorage.removeItem(`vault_bio_unlock_key:${safeId}`);
+    localStorage.removeItem(`vault_bio_credential_id:${safeId}`);
+    if (safeId === DEFAULT_VAULT_ID) {
+      localStorage.removeItem('vault_bio_unlock_key');
+      localStorage.removeItem('vault_bio_credential_id');
+      localStorage.removeItem('vault_encrypted_data');
+    }
+  } catch {
+    /* ignore */
+  }
 }

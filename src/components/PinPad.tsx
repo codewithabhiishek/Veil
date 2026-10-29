@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Delete, Fingerprint } from 'lucide-react';
+import { haptics } from '../lib/haptics';
 
 interface PinPadProps {
   pinLength?: number;
@@ -28,6 +29,7 @@ export function PinPad({
 
   useEffect(() => {
     if (error) {
+      haptics.error();
       setShake(true);
       setTimeout(() => {
         setShake(false);
@@ -37,6 +39,7 @@ export function PinPad({
   }, [error]);
 
   const handleDigit = (digit: string) => {
+    haptics.pinKey();
     if (pin.length < pinLength) {
       const newPin = pin + digit;
       setPin(newPin);
@@ -47,10 +50,12 @@ export function PinPad({
   };
 
   const handleDelete = () => {
+    haptics.tap();
     setPin(pin.slice(0, -1));
   };
 
   const handleBiometric = () => {
+    haptics.select();
     onBiometric?.();
   };
 

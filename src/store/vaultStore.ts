@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { VaultData, VaultEntry, VaultState, VaultSettings, UnlockMethod } from '../types/vault';
+import type { VaultData, VaultEntry, VaultState, VaultSettings } from '../types/vault';
 import {
   encryptVault,
   decryptVault,
@@ -14,7 +14,14 @@ import {
   removeBiometricUnlock,
   getVaultKey,
   isBiometricAvailable,
+  getActiveVaultId,
+  setActiveVaultId,
+  sanitizeVaultId,
+  getScopedSettingsKey,
+  DEFAULT_VAULT_ID,
+  BASE_VAULT_KEY,
 } from '../crypto/engine';
+import { haptics } from '../lib/haptics';
 
 interface VaultStore {
   state: VaultState;
@@ -26,8 +33,11 @@ interface VaultStore {
   lastActivity: number;
   lastMasterPassword: string | null;
   biometricAvailable: boolean;
+  activeVaultId: string;
   
   // Actions
+  switchVault: (vaultId: string) => void;
+  getAvailableVaults: () => string[];
   createVault: (masterPassword: string) => Promise<void>;
   unlockVault: (masterPassword: string) => Promise<void>;
   unlockWithPin: (pin: string) => Promise<void>;
@@ -63,9 +73,10 @@ const DEFAULT_SETTINGS: VaultSettings = {
   biometricEnabled: false,
 };
 
-function loadSettings(): VaultSettings {
+function loadSettings(vaultId?: string): VaultSettings {
   try {
-    const raw = localStorage.getItem('vault_settings');
+    if (typeof localStorage === 'undefined') return DEFAULT_SETTINGS;
+    const raw = localStorage.getItem(getScopedSettingsKey(vaultId));
     if (!raw) return DEFAULT_SETTINGS;
     return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
@@ -73,8 +84,14 @@ function loadSettings(): VaultSettings {
   }
 }
 
-function saveSettings(settings: VaultSettings): void {
-  localStorage.setItem('vault_settings', JSON.stringify(settings));
+function saveSettings(settings: VaultSettings, vaultId?: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(getScopedSettingsKey(vaultId), JSON.stringify(settings));
+    }
+  } catch {
+    /* ignore storage errors */
+  }
 }
 
 function generateId(): string {
@@ -91,6 +108,43 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   lastActivity: Date.now(),
   lastMasterPassword: null,
   biometricAvailable: false,
+  activeVaultId: getActiveVaultId(),
+
+  switchVault: (newVaultId: string) => {
+    const cleanId = sanitizeVaultId(newVaultId);
+    setActiveVaultId(cleanId);
+    const hasData = !!loadEncryptedVault(cleanId);
+    haptics.select();
+    set({
+      activeVaultId: cleanId,
+      state: hasData ? 'locked' : 'uninitialized',
+      vaultData: null,
+      selectedEntryId: null,
+      searchQuery: '',
+      selectedCategory: null,
+      lastMasterPassword: null,
+      settings: loadSettings(cleanId),
+    });
+  },
+
+  getAvailableVaults: () => {
+    const vaults = new Set<string>([DEFAULT_VAULT_ID, 'work', 'personal']);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const prefix = `${BASE_VAULT_KEY}:`;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(prefix)) {
+            const id = key.slice(prefix.length);
+            if (id) vaults.add(id);
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return Array.from(vaults);
+  },
 
   createVault: async (masterPassword: string) => {
     const vaultData: VaultData = {
@@ -99,7 +153,8 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     };
     
     const encrypted = await encryptVault(masterPassword, vaultData);
-    saveEncryptedVault(encrypted);
+    saveEncryptedVault(encrypted, get().activeVaultId);
+    haptics.unlock();
     
     set({
       state: 'unlocked',
@@ -110,10 +165,11 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   unlockVault: async (masterPassword: string) => {
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(get().activeVaultId);
     if (!encrypted) throw new Error('NO_VAULT');
     
     const vaultData = await decryptVault(masterPassword, encrypted);
+    haptics.unlock();
     
     set({
       state: 'unlocked',
@@ -124,10 +180,11 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   unlockWithPin: async (pin: string) => {
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(get().activeVaultId);
     if (!encrypted) throw new Error('NO_VAULT');
     
     const vaultData = await unlockWithPin(pin, encrypted);
+    haptics.unlock();
     
     set({
       state: 'unlocked',
@@ -137,12 +194,13 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   unlockWithBiometric: async () => {
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(get().activeVaultId);
     if (!encrypted) return false;
     
     const vaultData = await unlockWithBiometric(encrypted);
     if (!vaultData) return false;
     
+    haptics.unlock();
     set({
       state: 'unlocked',
       vaultData,
@@ -152,6 +210,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   lockVault: () => {
+    haptics.lock();
     set({
       state: 'locked',
       vaultData: null,
@@ -162,7 +221,9 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   deleteVault: () => {
-    deleteEncryptedVault();
+    const { activeVaultId } = get();
+    deleteEncryptedVault(activeVaultId);
+    haptics.delete();
     set({
       state: 'uninitialized',
       vaultData: null,
@@ -170,11 +231,17 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       lastMasterPassword: null,
       settings: { ...DEFAULT_SETTINGS },
     });
-    localStorage.removeItem('vault_settings');
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(getScopedSettingsKey(activeVaultId));
+      }
+    } catch {
+      /* ignore */
+    }
   },
 
   addEntry: async (entry) => {
-    const { vaultData, lastMasterPassword } = get();
+    const { vaultData, lastMasterPassword, activeVaultId } = get();
     if (!vaultData || !lastMasterPassword) return;
     
     const now = Date.now();
@@ -192,8 +259,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     };
     
     const encrypted = await encryptVault(lastMasterPassword, updatedData);
-    // Preserve PIN/biometric settings from existing vault
-    const existing = loadEncryptedVault();
+    const existing = loadEncryptedVault(activeVaultId);
     if (existing) {
       encrypted.pinSalt = existing.pinSalt;
       encrypted.pinIv = existing.pinIv;
@@ -201,13 +267,13 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       encrypted.webauthnCredentialId = existing.webauthnCredentialId;
       encrypted.webauthnWrappedKey = existing.webauthnWrappedKey;
     }
-    saveEncryptedVault(encrypted);
+    saveEncryptedVault(encrypted, activeVaultId);
     
     set({ vaultData: updatedData, selectedEntryId: newEntry.id, lastActivity: now });
   },
 
   updateEntry: async (id: string, updates: Partial<VaultEntry>) => {
-    const { vaultData, lastMasterPassword } = get();
+    const { vaultData, lastMasterPassword, activeVaultId } = get();
     if (!vaultData || !lastMasterPassword) return;
     
     const now = Date.now();
@@ -219,7 +285,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     };
     
     const encrypted = await encryptVault(lastMasterPassword, updatedData);
-    const existing = loadEncryptedVault();
+    const existing = loadEncryptedVault(activeVaultId);
     if (existing) {
       encrypted.pinSalt = existing.pinSalt;
       encrypted.pinIv = existing.pinIv;
@@ -227,22 +293,23 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       encrypted.webauthnCredentialId = existing.webauthnCredentialId;
       encrypted.webauthnWrappedKey = existing.webauthnWrappedKey;
     }
-    saveEncryptedVault(encrypted);
+    saveEncryptedVault(encrypted, activeVaultId);
     
     set({ vaultData: updatedData, lastActivity: now });
   },
 
   deleteEntry: async (id: string) => {
-    const { vaultData, lastMasterPassword, selectedEntryId } = get();
+    const { vaultData, lastMasterPassword, selectedEntryId, activeVaultId } = get();
     if (!vaultData || !lastMasterPassword) return;
     
+    haptics.delete();
     const updatedData: VaultData = {
       ...vaultData,
       entries: vaultData.entries.filter((e) => e.id !== id),
     };
     
     const encrypted = await encryptVault(lastMasterPassword, updatedData);
-    const existing = loadEncryptedVault();
+    const existing = loadEncryptedVault(activeVaultId);
     if (existing) {
       encrypted.pinSalt = existing.pinSalt;
       encrypted.pinIv = existing.pinIv;
@@ -250,7 +317,7 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       encrypted.webauthnCredentialId = existing.webauthnCredentialId;
       encrypted.webauthnWrappedKey = existing.webauthnWrappedKey;
     }
-    saveEncryptedVault(encrypted);
+    saveEncryptedVault(encrypted, activeVaultId);
     
     set({
       vaultData: updatedData,
@@ -260,35 +327,46 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   selectEntry: (id: string | null) => {
-    const { vaultData } = get();
-    if (id && vaultData) {
-      const entry = vaultData.entries.find(e => e.id === id);
-      if (entry) {
-        const updatedData = {
+    if (id) {
+      const { vaultData, lastMasterPassword, activeVaultId } = get();
+      if (vaultData && lastMasterPassword) {
+        const now = Date.now();
+        const updatedData: VaultData = {
           ...vaultData,
-          entries: vaultData.entries.map(e =>
-            e.id === id ? { ...e, lastAccessedAt: Date.now() } : e
+          entries: vaultData.entries.map((e) =>
+            e.id === id ? { ...e, lastAccessedAt: now } : e
           ),
         };
-        set({ selectedEntryId: id, vaultData: updatedData, lastActivity: Date.now() });
-        return;
+        encryptVault(lastMasterPassword, updatedData).then((encrypted) => {
+          const existing = loadEncryptedVault(activeVaultId);
+          if (existing) {
+            encrypted.pinSalt = existing.pinSalt;
+            encrypted.pinIv = existing.pinIv;
+            encrypted.pinWrappedKey = existing.pinWrappedKey;
+            encrypted.webauthnCredentialId = existing.webauthnCredentialId;
+            encrypted.webauthnWrappedKey = existing.webauthnWrappedKey;
+          }
+          saveEncryptedVault(encrypted, activeVaultId);
+        });
+        set({ vaultData: updatedData });
       }
     }
     set({ selectedEntryId: id, lastActivity: Date.now() });
   },
 
   setSearchQuery: (query: string) => {
-    set({ searchQuery: query, lastActivity: Date.now() });
+    set({ searchQuery: query });
   },
 
   setSelectedCategory: (category: string | null) => {
-    set({ selectedCategory: category, lastActivity: Date.now() });
+    haptics.select();
+    set({ selectedCategory: category, selectedEntryId: null });
   },
 
   updateSettings: (newSettings: Partial<VaultSettings>) => {
-    const { settings } = get();
+    const { settings, activeVaultId } = get();
     const updated = { ...settings, ...newSettings };
-    saveSettings(updated);
+    saveSettings(updated, activeVaultId);
     set({ settings: updated });
   },
 
@@ -299,47 +377,34 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   getFilteredEntries: () => {
     const { vaultData, searchQuery, selectedCategory } = get();
     if (!vaultData) return [];
-    
-    let entries = vaultData.entries;
-    
-    if (selectedCategory) {
-      if (selectedCategory === '__favorites__') {
-        entries = entries.filter(e => e.favorite);
-      } else if (selectedCategory === '__recent__') {
-        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-        entries = entries.filter(e => e.lastAccessedAt > oneDayAgo);
-      } else {
-        entries = entries.filter(e => e.category === selectedCategory);
-      }
-    }
-    
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      entries = entries.filter(e =>
-        e.name.toLowerCase().includes(q) ||
-        e.username.toLowerCase().includes(q) ||
-        e.category.toLowerCase().includes(q) ||
-        e.tags.some(t => t.toLowerCase().includes(q)) ||
-        e.url.toLowerCase().includes(q)
-      );
-    }
-    
-    return entries.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    return vaultData.entries.filter((entry) => {
+      const matchesSearch =
+        searchQuery === '' ||
+        entry.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        entry.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        entry.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        entry.url.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        entry.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      const matchesCategory =
+        selectedCategory === null ||
+        (selectedCategory === 'Favorites' ? entry.favorite : entry.category === selectedCategory);
+
+      return matchesSearch && matchesCategory;
+    });
   },
 
   getCategories: () => {
     const { vaultData } = get();
     if (!vaultData) return [];
-    const cats = new Set<string>();
-    vaultData.entries.forEach(e => { if (e.category) cats.add(e.category); });
-    vaultData.categories.forEach(c => cats.add(c));
-    return Array.from(cats).sort();
+    return vaultData.categories;
   },
 
   getFavorites: () => {
     const { vaultData } = get();
     if (!vaultData) return [];
-    return vaultData.entries.filter(e => e.favorite);
+    return vaultData.entries.filter((e) => e.favorite);
   },
 
   getRecentEntries: (count: number) => {
@@ -351,20 +416,20 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   setupPin: async (pin: string) => {
-    const { lastMasterPassword } = get();
+    const { lastMasterPassword, activeVaultId } = get();
     if (!lastMasterPassword) return false;
     
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(activeVaultId);
     if (!encrypted) return false;
     
     try {
       const vaultKey = await getVaultKey(lastMasterPassword, encrypted);
       const updated = await setupPinUnlock(pin, vaultKey, encrypted);
-      saveEncryptedVault(updated);
+      saveEncryptedVault(updated, activeVaultId);
       
       const { settings } = get();
       const newSettings = { ...settings, pinEnabled: true };
-      saveSettings(newSettings);
+      saveSettings(newSettings, activeVaultId);
       set({ settings: newSettings });
       return true;
     } catch {
@@ -373,23 +438,24 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   removePin: async () => {
-    const encrypted = loadEncryptedVault();
+    const { activeVaultId } = get();
+    const encrypted = loadEncryptedVault(activeVaultId);
     if (!encrypted) return;
     
     const updated = removePinUnlock(encrypted);
-    saveEncryptedVault(updated);
+    saveEncryptedVault(updated, activeVaultId);
     
     const { settings } = get();
     const newSettings = { ...settings, pinEnabled: false };
-    saveSettings(newSettings);
+    saveSettings(newSettings, activeVaultId);
     set({ settings: newSettings });
   },
 
   setupBiometric: async () => {
-    const { lastMasterPassword } = get();
+    const { lastMasterPassword, activeVaultId } = get();
     if (!lastMasterPassword) return false;
     
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(activeVaultId);
     if (!encrypted) return false;
     
     try {
@@ -397,10 +463,10 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
       const result = await setupBiometricUnlock(vaultKey, encrypted);
       
       if (result.success) {
-        saveEncryptedVault(result.vault);
+        saveEncryptedVault(result.vault, activeVaultId);
         const { settings } = get();
         const newSettings = { ...settings, biometricEnabled: true };
-        saveSettings(newSettings);
+        saveSettings(newSettings, activeVaultId);
         set({ settings: newSettings });
         return true;
       }
@@ -411,15 +477,16 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   removeBiometric: () => {
-    const encrypted = loadEncryptedVault();
+    const { activeVaultId } = get();
+    const encrypted = loadEncryptedVault(activeVaultId);
     if (!encrypted) return;
     
     const updated = removeBiometricUnlock(encrypted);
-    saveEncryptedVault(updated);
+    saveEncryptedVault(updated, activeVaultId);
     
     const { settings } = get();
     const newSettings = { ...settings, biometricEnabled: false };
-    saveSettings(newSettings);
+    saveSettings(newSettings, activeVaultId);
     set({ settings: newSettings });
   },
 
@@ -429,12 +496,12 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   hasPin: () => {
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(get().activeVaultId);
     return !!(encrypted?.pinSalt && encrypted?.pinWrappedKey);
   },
 
   hasBiometric: () => {
-    const encrypted = loadEncryptedVault();
+    const encrypted = loadEncryptedVault(get().activeVaultId);
     return !!(encrypted?.webauthnCredentialId && encrypted?.webauthnWrappedKey);
   },
 }));

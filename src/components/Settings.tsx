@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useVaultStore } from '../store/vaultStore';
 import { isBiometricAvailable } from '../crypto/engine';
-import { X, Shield, Clock, Palette, AlertTriangle, Fingerprint, Hash, Check, Loader2 } from 'lucide-react';
+import { X, Shield, Clock, Palette, AlertTriangle, Fingerprint, Hash, Check, Loader2, Layers } from 'lucide-react';
 import { useToast } from '../hooks/useVault';
 
 interface SettingsProps {
@@ -9,7 +9,20 @@ interface SettingsProps {
 }
 
 export function Settings({ onClose }: SettingsProps) {
-  const { settings, updateSettings, deleteVault, setupPin, removePin, setupBiometric, removeBiometric, checkBiometricAvailability, biometricAvailable } = useVaultStore();
+  const {
+    settings,
+    updateSettings,
+    deleteVault,
+    setupPin,
+    removePin,
+    setupBiometric,
+    removeBiometric,
+    checkBiometricAvailability,
+    biometricAvailable,
+    activeVaultId,
+    switchVault,
+    getAvailableVaults,
+  } = useVaultStore();
   const { addToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -20,6 +33,7 @@ export function Settings({ onClose }: SettingsProps) {
   const [pinLoading, setPinLoading] = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
+  const [newVaultName, setNewVaultName] = useState('');
 
   useEffect(() => {
     checkBiometricAvailability();
@@ -310,6 +324,65 @@ export function Settings({ onClose }: SettingsProps) {
             </div>
           </div>
 
+          {/* Multi-Vault Profile Isolation */}
+          <div className="pt-4 animate-fade-in-up" style={{ borderTop: '1px solid var(--color-border-subtle)', animationDelay: '180ms' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Layers className="w-4 h-4" style={{ color: 'var(--color-text-secondary)' }} />
+              <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
+                Vault Profiles (Isolated Storage)
+              </span>
+            </div>
+            <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
+              Current profile: <strong style={{ color: 'var(--color-text-primary)' }}>{activeVaultId}</strong>. Each profile maintains its own encrypted vault data.
+            </p>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {getAvailableVaults().map((v) => (
+                <button
+                  key={v}
+                  onClick={() => {
+                    if (activeVaultId !== v) {
+                      switchVault(v);
+                      addToast('info', `Switched to vault: ${v}`);
+                      onClose();
+                    }
+                  }}
+                  className="px-2.5 py-1 text-xs rounded-md border font-mono transition-colors"
+                  style={{
+                    backgroundColor: activeVaultId === v ? 'var(--color-surface-2)' : 'transparent',
+                    borderColor: activeVaultId === v ? 'var(--color-accent)' : 'var(--color-border-subtle)',
+                    color: activeVaultId === v ? 'var(--color-accent)' : 'var(--color-text-secondary)',
+                  }}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newVaultName}
+                onChange={(e) => setNewVaultName(e.target.value)}
+                placeholder="New vault profile..."
+                className="form-input text-xs flex-1"
+              />
+              <button
+                onClick={() => {
+                  if (newVaultName.trim()) {
+                    const id = newVaultName.trim();
+                    switchVault(id);
+                    addToast('info', `Switched to vault: ${id}`);
+                    setNewVaultName('');
+                    onClose();
+                  }
+                }}
+                className="px-3 py-1.5 text-xs rounded-md border transition-colors"
+                style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-primary)' }}
+              >
+                Switch
+              </button>
+            </div>
+          </div>
+
           {/* Danger Zone */}
           <div className="pt-4 animate-fade-in-up" style={{ borderTop: '1px solid var(--color-border-subtle)', animationDelay: '200ms' }}>
             <div className="flex items-center gap-2 mb-3">
@@ -359,6 +432,19 @@ export function Settings({ onClose }: SettingsProps) {
                 Delete Vault
               </button>
             )}
+          </div>
+
+          {/* Creator Attribution */}
+          <div className="pt-4 text-center" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
+            <a
+              href="https://abhiishek.is-a.dev/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs transition-colors hover:underline"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              Crafted by <span className="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Abhishek</span> ↗
+            </a>
           </div>
         </div>
       </div>

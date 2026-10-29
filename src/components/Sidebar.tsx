@@ -14,7 +14,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onNewEntry, onOpenSearch, onOpenSettings, isMobile, onClose }: SidebarProps) {
-  const { selectedCategory, setSelectedCategory, getCategories, lockVault, state, vaultData } = useVaultStore();
+  const { selectedCategory, setSelectedCategory, getCategories, lockVault, state, vaultData, activeVaultId } = useVaultStore();
   const [categoriesExpanded, setCategoriesExpanded] = useState(true);
   const categories = getCategories();
   const entryCount = vaultData?.entries.length ?? 0;
@@ -42,7 +42,10 @@ export function Sidebar({ onNewEntry, onOpenSearch, onOpenSettings, isMobile, on
             <Key className="w-3.5 h-3.5" style={{ color: 'var(--color-text-secondary)' }} />
           </div>
           <span className="text-sm font-semibold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
-            Vault
+            Veil
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--color-surface-2)', color: 'var(--color-text-tertiary)' }}>
+            {activeVaultId}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -134,7 +137,7 @@ export function Sidebar({ onNewEntry, onOpenSearch, onOpenSettings, isMobile, on
       </nav>
 
       {/* Footer */}
-      <div className="p-2" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
+      <div className="p-2 space-y-1" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
         <button
           onClick={onOpenSettings}
           className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-all duration-200 sidebar-item"
@@ -143,6 +146,16 @@ export function Sidebar({ onNewEntry, onOpenSearch, onOpenSettings, isMobile, on
           <Settings className="w-4 h-4 transition-transform duration-300 hover:rotate-90" />
           Settings
         </button>
+        <a
+          href="https://abhiishek.is-a.dev/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs transition-colors hover:text-current"
+          style={{ color: 'var(--color-text-tertiary)' }}
+        >
+          <span>Crafted by Abhishek</span>
+          <span className="font-mono text-[10px]">portfolio ↗</span>
+        </a>
       </div>
     </aside>
   );

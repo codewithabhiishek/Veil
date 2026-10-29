@@ -6,7 +6,9 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=for-the-badge&logo=react)](https://reactjs.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
-[![Vite](https://img.shields.io/badge/Vite-6.3-646CFF?style=for-the-badge&logo=vite)](https://vitejs.dev/)
+[![Vite](https://img.shields.io/badge/Vite-6.4-646CFF?style=for-the-badge&logo=vite)](https://vitejs.dev/)
+[![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen?style=for-the-badge&logo=checkmarx)](npm%20test)
+[![Portfolio](https://img.shields.io/badge/Portfolio-abhiishek.is--a.dev-orange?style=for-the-badge&logo=safari)](https://abhiishek.is-a.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 <p align="center">
@@ -25,6 +27,8 @@
 
 - **🔒 Military-Grade Cryptography**: Argon2id memory-hard key derivation + AES-256-GCM authenticated encryption.
 - **👁️ Zero-Knowledge Architecture**: Master passwords and private keys are never stored on disk, memory is wiped, and keys stay strictly client-side.
+- **🛡️ Multi-Vault Profile Isolation**: Scoped encrypted keys (`veil_vault_encrypted_data:[id]`) prevent multi-user collision and support separate personal, work, or custom vaults.
+- **📳 Tactile Mobile Haptics**: Native-feeling haptic pulses on PIN entries, vault unlock, clipboard copy, lock, and security warnings.
 - **📴 100% Offline-First (Air-Gapped)**: Completely functional without internet. All data lives in your browser's protected local storage.
 - **⚡ Biometrics & Fast PIN**: Instant WebAuthn (Touch ID, Face ID, Android Fingerprint, Windows Hello) and PBKDF2 PIN unlock.
 - **📱 Native PWA Feel**: Installable as a Progressive Web App on macOS, iOS, Windows, and Android with full touch gestures, safe area support, and tactile feedback.
@@ -206,5 +210,5 @@ Veil is an installable PWA that functions like a native application without App 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for more information.
 
 <div align="center">
-  <sub>Crafted with precision for privacy and security.</sub>
+  <sub>Crafted with precision for privacy and security by <a href="https://abhiishek.is-a.dev/" target="_blank" rel="noopener noreferrer">Abhishek</a>.</sub>
 </div>

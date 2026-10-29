@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Lock, Shield, AlertCircle, KeyRound, Fingerprint } from 'lucide-react';
+import { Lock, Shield, AlertCircle, KeyRound, Fingerprint, Layers } from 'lucide-react';
+import { haptics } from '../lib/haptics';
+import { useVaultStore } from '../store/vaultStore';
 
 interface LockScreenPasswordProps {
   onUnlock: (password: string) => Promise<void>;
@@ -11,6 +13,7 @@ interface LockScreenPasswordProps {
 }
 
 export function LockScreenView({ onUnlock, error: externalError, hasPin, hasBiometric, onSwitchToPin, onBiometric }: LockScreenPasswordProps) {
+  const { activeVaultId, switchVault, getAvailableVaults } = useVaultStore();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,7 +25,10 @@ export function LockScreenView({ onUnlock, error: externalError, hasPin, hasBiom
   }, []);
 
   useEffect(() => {
-    if (externalError) setError(externalError);
+    if (externalError) {
+      setError(externalError);
+      haptics.error();
+    }
   }, [externalError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +41,7 @@ export function LockScreenView({ onUnlock, error: externalError, hasPin, hasBiom
     try {
       await onUnlock(password);
     } catch {
+      haptics.error();
       setError('Unable to unlock vault. Please check your master password.');
       setPassword('');
       setShake(true);
@@ -152,9 +159,43 @@ export function LockScreenView({ onUnlock, error: externalError, hasPin, hasBiom
           )}
         </div>
 
-        <div className="mt-6 flex items-center justify-center gap-2 text-xs animate-fade-in-up" style={{ color: 'var(--color-text-muted)', animationDelay: '400ms' }}>
+        {/* Vault Profile Switcher */}
+        <div className="mt-5 flex items-center justify-center gap-2 text-xs animate-fade-in-up" style={{ animationDelay: '350ms' }}>
+          <Layers className="w-3.5 h-3.5" style={{ color: 'var(--color-text-tertiary)' }} />
+          <span style={{ color: 'var(--color-text-tertiary)' }}>Vault:</span>
+          <select
+            value={activeVaultId}
+            onChange={(e) => switchVault(e.target.value)}
+            className="px-2 py-1 rounded text-xs border font-mono transition-colors"
+            style={{
+              backgroundColor: 'var(--color-surface-1)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {getAvailableVaults().map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-2 text-xs animate-fade-in-up" style={{ color: 'var(--color-text-muted)', animationDelay: '400ms' }}>
           <div className="w-1 h-1 rounded-full" style={{ backgroundColor: 'var(--color-success)' }} />
           <span>Encrypted with AES-256-GCM</span>
+        </div>
+
+        <div className="mt-4 text-center animate-fade-in-up" style={{ animationDelay: '450ms' }}>
+          <a
+            href="https://abhiishek.is-a.dev/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] transition-colors hover:underline"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            Crafted by <span className="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Abhishek</span> ↗
+          </a>
         </div>
       </div>
     </div>
